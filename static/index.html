@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Urban Air Quality Assistant</title>
+  <style>
+    :root { --bg: #f4f7f6; --card: #ffffff; --primary: #0f766e; --text: #1e293b; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem 1rem; }
+    main { max-width: 760px; margin: 0 auto; }
+    .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); margin-bottom: 1.5rem; }
+    label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+    input, textarea { width: 100%; padding: 0.65rem; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-size: 1rem; }
+    button { background: var(--primary); color: #fff; border: none; padding: 0.8rem 1.5rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 1rem; width: 100%; }
+    button:hover { opacity: 0.92; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .item { background: #f8fafc; padding: 1rem; border-left: 4px solid var(--primary); border-radius: 6px; margin-bottom: 0.75rem; }
+    .badge { display: inline-block; font-size: 0.8rem; background: #ccfbf1; color: #115e59; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="card">
+      <h1>Urban Air Quality Assistant</h1>
+      <p>Get personalized low-emission daily routines and indoor air purification hacks based on your local AQI.</p>
+    </header>
+
+    <section class="card" aria-label="Air Quality Input Form">
+      <form id="aqiForm">
+        <label for="city">City Name</label>
+        <input id="city" type="text" placeholder="e.g., Delhi, Bengaluru, Hyderabad" required />
+
+        <label for="aqi">Current AQI (0–500+)</label>
+        <input id="aqi" type="number" min="0" max="1000" value="165" required />
+
+        <label for="routine">Daily Commute & Routine</label>
+        <textarea id="routine" rows="2" placeholder="e.g., 12 km bike commute in traffic, evening outdoor jog" required></textarea>
+
+        <label for="home_setup">Indoor Home Setup</label>
+        <textarea id="home_setup" rows="2" placeholder="e.g., 2BHK apartment near main road, no air purifier, gas stove" required></textarea>
+
+        <button type="submit" id="submitBtn">Generate Action Plan</button>
+      </form>
+    </section>
+
+    <section id="results" aria-live="polite" hidden></section>
+  </main>
+
+  <script>
+    const form = document.getElementById('aqiForm');
+    const results = document.getElementById('results');
+    const btn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      btn.textContent = 'Analyzing Air Quality...';
+      results.hidden = true;
+
+      const payload = {
+        city: document.getElementById('city').value,
+        aqi: Number(document.getElementById('aqi').value),
+        routine: document.getElementById('routine').value,
+        home_setup: document.getElementById('home_setup').value
+      };
+
+      try {
+        const res = await fetch('/api/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+        results.innerHTML = `
+          <div class="card">
+            <h2>Air Quality Assessment</h2>
+            <p>${data.risk_summary}</p>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <h3>Low-Emission Routines</h3>
+              ${data.low_emission_routines.map(r => `
+                <div class="item">
+                  <strong>${r.title}</strong>
+                  <p>${r.action}</p>
+                  <span class="badge">${r.impact}</span>
+                </div>`).join('')}
+            </div>
+            <div class="card">
+              <h3>Indoor Air Hacks</h3>
+              ${data.indoor_air_hacks.map(h => `
+                <div class="item">
+                  <strong>${h.title}</strong>
+                  <p>${h.action}</p>
+                  <span class="badge">${h.benefit}</span>
+                </div>`).join('')}
+            </div>
+          </div>`;
+        results.hidden = false;
+      } catch (err) {
+        results.innerHTML = `<div class="card" role="alert"><strong>Error:</strong> ${err.message}</div>`;
+        results.hidden = false;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Action Plan';
+      }
+    });
+  </script>
+</body>
+</html>
