@@ -1,14 +1,21 @@
-import os
+import hashlib
 import json
+import logging
+import os
 import httpx
-from google import genai
 from dotenv import load_dotenv
+from google import genai
+
+from app.cache import BoundedTTLCache
 
 load_dotenv(override=True)
+logger = logging.getLogger("aeroguard.ai")
+
+_plan_cache = BoundedTTLCache(max_size=256, ttl_seconds=900)
 
 SYSTEM_PROMPT = """
-You are AeroGuard AI, an expert Urban Air Quality & Environmental Health Intelligence Engine.
-Given a user's city, current AQI, PM2.5, household profile, primary commute, and indoor setup, generate a structured daily protection & low-emission plan.
+You are AeroGuard AI, an Urban Air Quality & Environmental Health Intelligence Engine.
+Given a user's city, current US AQI, household profile, primary commute, and indoor setup, generate a structured daily protection & low-emission plan.
 
 Respond ONLY in valid JSON matching this exact schema:
 {
@@ -35,13 +42,21 @@ Respond ONLY in valid JSON matching this exact schema:
 """
 
 
+def _build_cache_key(city: str, aqi: int, routine: str, home_setup: str) -> str:
+    raw = f"{city.lower()}|{aqi // 5}|{routine.lower()}|{home_setup.lower()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def _smart_aqi_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
-    """Guaranteed AQI-calibrated plan with bio-dose and time-slotted routines."""
+    """Deterministic AQI-calibrated fallback plan with bio-dose and time-slotted routines."""
     level = "Very Poor" if aqi > 250 else ("Unhealthy" if aqi > 150 else ("Moderate" if aqi > 50 else "Good"))
     bio_dose = max(8, round(aqi * 0.14))
     prevented = max(5, round(bio_dose * 0.46))
     return {
-        "risk_summary": f"{city} is at AQI {aqi} ({level}). Tailoring ventilation timing and commute exposure for your profile ({routine}; {home_setup}) cuts daily particulate inhalation by nearly half.",
+        "risk_summary": (
+            f"{city} is at AQI {aqi} ({level}). Tailoring ventilation timing and commute exposure "
+            f"for your profile ({routine}; {home_setup}) cuts daily particulate inhalation by nearly half."
+        ),
         "inhaled_bio_dose_ug": bio_dose,
         "safest_window": "12:30 PM – 4:00 PM" if aqi > 100 else "7:00 AM – 6:00 PM",
         "exposure_prevented_ug": prevented,
@@ -102,9 +117,19 @@ def _smart_aqi_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
     }
 
 
-def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
-    """Generates structured air quality intelligence using Gemini with Groq fallback."""
-    load_dotenv(override=True)
+async def generate_air_quality_plan(
+    city: str,
+    aqi: int,
+    routine: str,
+    home_setup: str,
+    client: httpx.AsyncClient | None = None,
+) -> dict:
+    """Generates structured air quality intelligence asynchronously with TTL caching."""
+    cache_key = _build_cache_key(city, aqi, routine, home_setup)
+    cached_plan = _plan_cache.get(cache_key)
+    if cached_plan is not None:
+        return cached_plan
+
     user_prompt = (
         f"City: {city}\n"
         f"Current US AQI: {aqi}\n"
@@ -114,10 +139,10 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
 
     gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if gemini_key:
-        for model_name in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash"]:
+        ai_client = genai.Client(api_key=gemini_key)
+        for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash"):
             try:
-                client = genai.Client(api_key=gemini_key)
-                response = client.models.generate_content(
+                response = await ai_client.aio.models.generate_content(
                     model=model_name,
                     contents=user_prompt,
                     config=genai.types.GenerateContentConfig(
@@ -126,19 +151,21 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
                         temperature=0.35,
                     ),
                 )
-                return json.loads(response.text)
-            except Exception:
-                continue
+                parsed = json.loads(response.text)
+                _plan_cache.set(cache_key, parsed)
+                return parsed
+            except (ValueError, KeyError, RuntimeError) as err:
+                logger.warning("Gemini model %s skipped: %s", model_name, err)
 
     groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
-    if groq_key:
+    if groq_key and client is not None:
         try:
-            res = httpx.post(
+            res = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {groq_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": "AeroGuardAI/2.0",
+                    "User-Agent": "AeroGuardAI/3.0",
                 },
                 json={
                     "model": "llama-3.3-70b-versatile",
@@ -149,11 +176,14 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
                     "response_format": {"type": "json_object"},
                     "temperature": 0.35,
                 },
-                timeout=20.0,
             )
             if res.status_code == 200:
-                return json.loads(res.json()["choices"][0]["message"]["content"])
-        except Exception:
-            pass
+                parsed = json.loads(res.json()["choices"][0]["message"]["content"])
+                _plan_cache.set(cache_key, parsed)
+                return parsed
+        except (httpx.HTTPError, ValueError, KeyError) as err:
+            logger.warning("Groq fallback skipped: %s", err)
 
-    return _smart_aqi_plan(city, aqi, routine, home_setup)
+    fallback = _smart_aqi_plan(city, aqi, routine, home_setup)
+    _plan_cache.set(cache_key, fallback)
+    return fallback
