@@ -3,111 +3,190 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Urban Air Quality Assistant</title>
-  <style>
-    :root { --bg: #f4f7f6; --card: #ffffff; --primary: #0f766e; --text: #1e293b; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem 1rem; }
-    main { max-width: 760px; margin: 0 auto; }
-    .card { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); margin-bottom: 1.5rem; }
-    label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
-    input, textarea { width: 100%; padding: 0.65rem; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-size: 1rem; }
-    button { background: var(--primary); color: #fff; border: none; padding: 0.8rem 1.5rem; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 1rem; width: 100%; }
-    button:hover { opacity: 0.92; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
-    .item { background: #f8fafc; padding: 1rem; border-left: 4px solid var(--primary); border-radius: 6px; margin-bottom: 0.75rem; }
-    .badge { display: inline-block; font-size: 0.8rem; background: #ccfbf1; color: #115e59; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; }
-  </style>
+  <title>AeroGuard AI — Urban Air Quality Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <main>
-    <header class="card">
-      <h1>Urban Air Quality Assistant</h1>
-      <p>Get personalized low-emission daily routines and indoor air purification hacks based on your local AQI.</p>
+  <div class="app-shell">
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">🌬️</div>
+        <div>
+          <h1>AeroGuard <span class="live-badge">● LIVE</span></h1>
+          <p>Urban Air Quality &amp; Bio-Dose Intelligence</p>
+        </div>
+      </div>
+
+      <form id="search-form" class="search-bar" role="search">
+        <input type="text" id="city-input" value="Guntur" placeholder="Search any city (e.g., Guntur, Delhi, Jaipur)..." aria-label="City name" required />
+        <button type="submit" id="search-btn" class="btn-blue">🔍 Analyze City</button>
+      </form>
     </header>
 
-    <section class="card" aria-label="Air Quality Input Form">
-      <form id="aqiForm">
-        <label for="city">City Name</label>
-        <input id="city" type="text" placeholder="e.g., Delhi, Bengaluru, Hyderabad" required />
+    <!-- Quick City Preset Pills -->
+    <nav class="city-pills" aria-label="Quick city presets">
+      <button type="button" class="pill active" data-city="Guntur">Guntur</button>
+      <button type="button" class="pill" data-city="Delhi">Delhi NCR</button>
+      <button type="button" class="pill" data-city="Bengaluru">Bengaluru</button>
+      <button type="button" class="pill" data-city="Hyderabad">Hyderabad</button>
+      <button type="button" class="pill" data-city="Mumbai">Mumbai</button>
+      <button type="button" class="pill" data-city="Jaipur">Jaipur</button>
+    </nav>
 
-        <label for="aqi">Current AQI (0–500+)</label>
-        <input id="aqi" type="number" min="0" max="1000" value="165" required />
-
-        <label for="routine">Daily Commute & Routine</label>
-        <textarea id="routine" rows="2" placeholder="e.g., 12 km bike commute in traffic, evening outdoor jog" required></textarea>
-
-        <label for="home_setup">Indoor Home Setup</label>
-        <textarea id="home_setup" rows="2" placeholder="e.g., 2BHK apartment near main road, no air purifier, gas stove" required></textarea>
-
-        <button type="submit" id="submitBtn">Generate Action Plan</button>
-      </form>
+    <!-- Sky & Hourly Forecast Hero Banner -->
+    <section id="sky-banner" class="sky-banner day-sky" aria-label="Live Local Weather and Forecast">
+      <div class="sky-main">
+        <span class="sky-kicker" id="sky-kicker">☀️ DAYTIME ATMOSPHERIC TELEMETRY</span>
+        <h2 id="banner-city">Guntur, India</h2>
+        <div class="temp-display"><span id="banner-temp">29</span>°</div>
+        <p class="sky-sub" id="sky-sub">Real-time Open-Meteo atmospheric &amp; particulate feed</p>
+      </div>
+      <div id="hourly-strip" class="hourly-strip" aria-label="Hourly temperature forecast"></div>
     </section>
 
-    <section id="results" aria-live="polite" hidden></section>
-  </main>
-
-  <script>
-    const form = document.getElementById('aqiForm');
-    const results = document.getElementById('results');
-    const btn = document.getElementById('submitBtn');
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      btn.disabled = true;
-      btn.textContent = 'Analyzing Air Quality...';
-      results.hidden = true;
-
-      const payload = {
-        city: document.getElementById('city').value,
-        aqi: Number(document.getElementById('aqi').value),
-        routine: document.getElementById('routine').value,
-        home_setup: document.getElementById('home_setup').value
-      };
-
-      try {
-        const res = await fetch('/api/recommend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Request failed');
-
-        results.innerHTML = `
-          <div class="card">
-            <h2>Air Quality Assessment</h2>
-            <p>${data.risk_summary}</p>
+    <!-- Main 2-Column Bento Workspace -->
+    <main class="bento-grid">
+      <!-- Left Column: Live AQI + Street Map + Household Pill Selectors -->
+      <div class="col-left">
+        <!-- Air Quality Spectrum Card -->
+        <section class="card aqi-card" aria-labelledby="aqi-heading">
+          <div class="card-head">
+            <span class="micro-label" id="aqi-heading">AIR QUALITY • <strong id="aqi-city-label">GUNTUR</strong></span>
+            <span id="aqi-status-pill" class="status-tag unhealthy">Unhealthy</span>
           </div>
-          <div class="grid">
-            <div class="card">
-              <h3>Low-Emission Routines</h3>
-              ${data.low_emission_routines.map(r => `
-                <div class="item">
-                  <strong>${r.title}</strong>
-                  <p>${r.action}</p>
-                  <span class="badge">${r.impact}</span>
-                </div>`).join('')}
+
+          <div class="aqi-big-row">
+            <div class="aqi-number" id="aqi-number">165</div>
+            <div class="aqi-slider-wrap">
+              <label for="aqi-slider" class="sr-only">Simulate AQI</label>
+              <input type="range" id="aqi-slider" min="15" max="450" value="165" />
+              <div class="spectrum-bar" aria-hidden="true"></div>
             </div>
-            <div class="card">
-              <h3>Indoor Air Hacks</h3>
-              ${data.indoor_air_hacks.map(h => `
-                <div class="item">
-                  <strong>${h.title}</strong>
-                  <p>${h.action}</p>
-                  <span class="badge">${h.benefit}</span>
-                </div>`).join('')}
+          </div>
+
+          <p class="aqi-caption" id="aqi-caption">Elevated fine particulate load; shift outdoor exertion to midday dispersion.</p>
+
+          <div class="pollutants-row">
+            <div><span>PM2.5</span><strong id="pm25-val">48.2</strong></div>
+            <div><span>PM10</span><strong id="pm10-val">86.0</strong></div>
+            <div><span>NO₂</span><strong id="no2-val">24.5</strong></div>
+            <div><span>O₃</span><strong id="o3-val">51.0</strong></div>
+          </div>
+        </section>
+
+        <!-- Street-Level AQI Map Card -->
+        <section class="card map-card" aria-label="City Air Quality Map">
+          <div class="card-head">
+            <span class="micro-label">📍 <strong id="map-coords">16.30°N, 80.43°E</strong></span>
+            <span id="map-badge" class="status-tag unhealthy">AQI 165</span>
+          </div>
+          <div id="city-map" class="map-box"></div>
+        </section>
+
+        <!-- Household & Lifestyle Interactive Toggles -->
+        <section class="card profile-card" aria-labelledby="profile-heading">
+          <h3 id="profile-heading">⚙️ Household &amp; Lifestyle Profile</h3>
+
+          <div class="toggle-group">
+            <span class="group-label">Household Members</span>
+            <div class="chip-grid" data-group="members">
+              <button type="button" class="chip active" data-val="Kids">Kids</button>
+              <button type="button" class="chip" data-val="Elderly">Elderly</button>
+              <button type="button" class="chip" data-val="Asthma / Sensitive">Asthma / Sensitive</button>
+              <button type="button" class="chip" data-val="General Adult">General Adult</button>
             </div>
-          </div>`;
-        results.hidden = false;
-      } catch (err) {
-        results.innerHTML = `<div class="card" role="alert"><strong>Error:</strong> ${err.message}</div>`;
-        results.hidden = false;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Generate Action Plan';
-      }
-    });
-  </script>
+          </div>
+
+          <div class="toggle-group">
+            <span class="group-label">Primary Commute</span>
+            <div class="chip-grid" data-group="commute">
+              <button type="button" class="chip active" data-val="Two-Wheeler in Traffic">Two-Wheeler</button>
+              <button type="button" class="chip" data-val="Metro / Public Transit">Metro / Public</button>
+              <button type="button" class="chip" data-val="Car Commute">Car</button>
+              <button type="button" class="chip" data-val="Walk / Cycle">Walk / Cycle</button>
+            </div>
+          </div>
+
+          <div class="toggle-group">
+            <span class="group-label">Indoor Setup</span>
+            <div class="chip-grid" data-group="indoor">
+              <button type="button" class="chip active" data-val="Natural Ventilation + Gas Stove">Natural Ventilation</button>
+              <button type="button" class="chip" data-val="HEPA Air Purifier">HEPA Purifier</button>
+              <button type="button" class="chip" data-val="Split AC">AC</button>
+            </div>
+          </div>
+
+          <button type="button" id="update-plan-btn" class="btn-blue full-width">
+            ✨ Update Personalized Plan
+          </button>
+        </section>
+      </div>
+
+      <!-- Right Column: Time-Slotted Routines, Indoor Hacks & Sustainable Alternatives -->
+      <div class="col-right">
+        <!-- Low-Emission Daily Routine Card -->
+        <section class="card" aria-labelledby="routine-heading">
+          <div class="card-head">
+            <h3 id="routine-heading">🕒 Low-Emission Daily Routine</h3>
+            <span class="engine-pill">Gemini 2.5 + AeroGuard Engine</span>
+          </div>
+          <p class="summary-text" id="risk-summary">Analyzing local air telemetry and generating your personalized routine...</p>
+
+          <div id="time-routines-list" class="timeline-list"></div>
+        </section>
+
+        <!-- Indoor Air Quality Hacks Card -->
+        <section class="card" aria-labelledby="hacks-heading">
+          <div class="card-head">
+            <h3 id="hacks-heading">🏡 Indoor Air Quality Hacks</h3>
+            <span class="micro-label">Zero-Cost &amp; Home-Specific</span>
+          </div>
+          <ul id="hacks-list" class="hacks-list"></ul>
+        </section>
+
+        <!-- Sustainable Alternatives & Impact Card -->
+        <section class="card" aria-labelledby="alt-heading">
+          <div class="card-head">
+            <h3 id="alt-heading">🌱 Sustainable Alternatives &amp; Impact</h3>
+            <span class="impact-summary-badge" id="impact-badge">-46% PM2.5 Dose • -19.2 kg CO₂/wk</span>
+          </div>
+          <div id="alternatives-list" class="alt-list"></div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Bottom Bio-Dose & Lung-Safe Window Strip -->
+    <footer class="card biodose-bar" aria-label="Bio-Dose and Lung-Safe Window Summary">
+      <div class="biodose-head">
+        <span class="biodose-title">🫁 AeroGuard Bio-Dose &amp; Lung-Safe Window Engine</span>
+        <button type="button" id="copy-brief-btn" class="btn-outline">📋 Copy Family Air Brief</button>
+      </div>
+      <div class="biodose-metrics">
+        <div class="metric-tile">
+          <span class="micro-label">INHALED PM2.5 BIO-DOSE</span>
+          <strong id="bio-dose-val">23 <small>µg/day</small></strong>
+          <span class="sub-note">Adjusted for protective routines</span>
+        </div>
+        <div class="metric-tile">
+          <span class="micro-label">LUNG-SAFE OUTDOOR WINDOW</span>
+          <strong id="safe-window-val">12:30 PM – 4:00 PM</strong>
+          <span class="sub-note">Peak thermal dispersion window</span>
+        </div>
+        <div class="metric-tile">
+          <span class="micro-label">EXPOSURE PREVENTED</span>
+          <strong class="green-num" id="prevented-val">-19 <small>µg/day</small></strong>
+          <span class="sub-note">Compared to unmitigated baseline</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

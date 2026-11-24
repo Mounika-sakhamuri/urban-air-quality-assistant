@@ -7,74 +7,111 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 SYSTEM_PROMPT = """
-You are an expert Urban Air Quality & Sustainability Assistant.
-Given a user's city, current AQI level, daily commute/routine, and indoor home setup, provide:
-1. "risk_summary": A concise 1-2 sentence health and air quality assessment tailored to the AQI severity.
-2. "low_emission_routines": 3 specific, actionable daily routine adjustments to cut personal carbon/particulate emissions (include estimated CO2 or pollution impact).
-3. "indoor_air_hacks": 3 practical, budget-friendly indoor air purification hacks tailored to their home setup.
+You are AeroGuard AI, an expert Urban Air Quality & Environmental Health Intelligence Engine.
+Given a user's city, current AQI, PM2.5, household profile, primary commute, and indoor setup, generate a structured daily protection & low-emission plan.
 
 Respond ONLY in valid JSON matching this exact schema:
 {
-  "risk_summary": "string",
-  "low_emission_routines": [{"title": "string", "action": "string", "impact": "string"}],
-  "indoor_air_hacks": [{"title": "string", "action": "string", "benefit": "string"}]
+  "risk_summary": "1-2 concise sentences summarizing local AQI hazard and key indoor/outdoor action.",
+  "inhaled_bio_dose_ug": 24,
+  "safest_window": "12:30 PM – 4:00 PM",
+  "exposure_prevented_ug": 19,
+  "time_routines": [
+    {"slot": "Morning (6:30 – 10:00 AM)", "title": "string", "action": "string", "why": "string"},
+    {"slot": "Midday (1:00 – 4:00 PM)", "title": "string", "action": "string", "why": "string"},
+    {"slot": "Evening (6:00 – 10:00 PM)", "title": "string", "action": "string", "why": "string"}
+  ],
+  "sustainable_alternatives": [
+    {"title": "string", "action": "string", "impact": "-28% PM2.5"},
+    {"title": "string", "action": "string", "impact": "-22% NO2"},
+    {"title": "string", "action": "string", "impact": "-18% CO2"}
+  ],
+  "indoor_air_hacks": [
+    {"title": "string", "action": "string", "benefit": "-35% Indoor PM2.5"},
+    {"title": "string", "action": "string", "benefit": "Zero VOC Spike"},
+    {"title": "string", "action": "string", "benefit": "Overnight Clean Zone"}
+  ]
 }
 """
 
 
 def _smart_aqi_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
-    """Guaranteed AQI-calibrated fallback plan if external LLM endpoints are rate-limited."""
-    level = "Unhealthy" if aqi > 150 else ("Moderate" if aqi > 50 else "Good")
+    """Guaranteed AQI-calibrated plan with bio-dose and time-slotted routines."""
+    level = "Very Poor" if aqi > 250 else ("Unhealthy" if aqi > 150 else ("Moderate" if aqi > 50 else "Good"))
+    bio_dose = max(8, round(aqi * 0.14))
+    prevented = max(5, round(bio_dose * 0.46))
     return {
-        "risk_summary": f"In {city}, an AQI of {aqi} falls into the {level} category. Reducing peak-hour traffic exposure and controlling indoor combustion/dust sources will significantly lower daily PM2.5 inhalation.",
-        "low_emission_routines": [
+        "risk_summary": f"{city} is at AQI {aqi} ({level}). Tailoring ventilation timing and commute exposure for your profile ({routine}; {home_setup}) cuts daily particulate inhalation by nearly half.",
+        "inhaled_bio_dose_ug": bio_dose,
+        "safest_window": "12:30 PM – 4:00 PM" if aqi > 100 else "7:00 AM – 6:00 PM",
+        "exposure_prevented_ug": prevented,
+        "time_routines": [
             {
-                "title": "Off-Peak Commute & Shared Transit",
-                "action": f"Shift your routine ({routine[:55]}) outside rush hour or switch 2–3 days/week to public transit or carpooling.",
-                "impact": "-1.9 kg CO2 / day",
+                "slot": "Morning (6:30 – 10:00 AM)",
+                "title": "Keep road-facing windows sealed; shift workout indoors",
+                "action": "Avoid rush-hour outdoor exertion near traffic corridors.",
+                "why": "Morning thermal inversion traps vehicle & biomass PM2.5 near breathing height.",
             },
             {
-                "title": "Indoor Exercise Substitution",
-                "action": "Replace evening outdoor jogging with indoor bodyweight/yoga workouts whenever local AQI exceeds 150.",
-                "impact": "-65% PM2.5 lung intake",
+                "slot": "Midday (1:00 – 4:00 PM)",
+                "title": "Open cross-ventilation for 20 mins & batch outdoor errands",
+                "action": "Flush stale indoor CO2 while daytime mixing disperses ground smog.",
+                "why": "Solar heating lifts the inversion layer, dropping outdoor PM2.5 by up to 35%.",
             },
             {
-                "title": "Zero-Idling & Eco-Routing",
-                "action": "Switch off engine ignition at traffic signals longer than 20 seconds and prefer tree-lined side streets over main arterials.",
-                "impact": "-15% tailpipe emissions",
+                "slot": "Evening (6:00 – 10:00 PM)",
+                "title": "Activate bedroom clean-air zone 1 hr before sleep",
+                "action": "Close exterior vents and run filtration or wet-mopped damp circulation.",
+                "why": "Evening traffic + cooling air spikes PM2.5; clean bedroom air aids overnight recovery.",
+            },
+        ],
+        "sustainable_alternatives": [
+            {
+                "title": "Shift Commute to Metro / EV Carpool",
+                "action": f"Adapt your routine ({routine[:45]}) to shared transit 3+ days/week.",
+                "impact": "-28% PM2.5 Dose",
+            },
+            {
+                "title": "Run Kitchen Exhaust + Lid-On Cooking",
+                "action": "Eliminates indoor NO2 spikes and ultrafine cooking aerosols.",
+                "impact": "-22% Indoor NO2",
+            },
+            {
+                "title": "Zero-Idling & Shaded Side-Street Routing",
+                "action": "Cut engine at stops >20s and avoid congested arterial junctions.",
+                "impact": "-19.2 kg CO2/wk",
             },
         ],
         "indoor_air_hacks": [
             {
-                "title": "Timed Cross-Ventilation Window",
-                "action": f"For your setup ({home_setup[:55]}), keep road-facing windows closed during peak traffic (8–11 AM, 6–9 PM) and ventilate between 1–4 PM.",
-                "benefit": "Cuts indoor PM2.5 infiltration",
+                "title": "Wet-Mop Floors Instead of Dry Sweeping",
+                "action": "Traps settled PM10 road dust without resuspending particles into indoor air.",
+                "benefit": "-35% Resuspended Dust",
             },
             {
-                "title": "Gas Stove Exhaust & Wet Mopping",
-                "action": "Always run kitchen exhaust/chimney while cooking on gas and wet-mop floors daily instead of dry sweeping.",
-                "benefit": "Traps NO2 & settled dust",
+                "title": "Damp Microfiber Door-Draft Stoppers",
+                "action": f"Seal entry gaps in your setup ({home_setup[:40]}) during peak evening smog.",
+                "benefit": "Blocks Smog Infiltration",
             },
             {
-                "title": "Natural Bio-Filtration & Door Seals",
-                "action": "Place Snake Plants or Areca Palms near windows/entryways and seal door gaps with damp cloth draft stoppers.",
-                "benefit": "Zero-electricity air filtering",
+                "title": "Bio-Filtration Cluster (Snake Plant & Areca Palm)",
+                "action": "Place high-transpiration indoor plants near bedroom and living room windows.",
+                "benefit": "24/7 Passive VOC Capture",
             },
         ],
     }
 
 
 def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
-    """Generates tailored low-emission routines and indoor air hacks using Gemini with Groq fallback."""
+    """Generates structured air quality intelligence using Gemini with Groq fallback."""
     load_dotenv(override=True)
     user_prompt = (
         f"City: {city}\n"
-        f"Current AQI: {aqi}\n"
-        f"Daily Routine/Commute: {routine}\n"
+        f"Current US AQI: {aqi}\n"
+        f"Household & Commute Profile: {routine}\n"
         f"Indoor Setup: {home_setup}"
     )
 
-    # 1. Primary: Google Gemini
     gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if gemini_key:
         for model_name in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash"]:
@@ -86,14 +123,13 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
                     config=genai.types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
                         response_mime_type="application/json",
-                        temperature=0.4,
+                        temperature=0.35,
                     ),
                 )
                 return json.loads(response.text)
             except Exception:
                 continue
 
-    # 2. Secondary: Groq API
     groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
     if groq_key:
         try:
@@ -102,7 +138,7 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
                 headers={
                     "Authorization": f"Bearer {groq_key}",
                     "Content-Type": "application/json",
-                    "User-Agent": "UrbanAirAssistant/1.0",
+                    "User-Agent": "AeroGuardAI/2.0",
                 },
                 json={
                     "model": "llama-3.3-70b-versatile",
@@ -111,7 +147,7 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
                         {"role": "user", "content": user_prompt},
                     ],
                     "response_format": {"type": "json_object"},
-                    "temperature": 0.4,
+                    "temperature": 0.35,
                 },
                 timeout=20.0,
             )
@@ -120,5 +156,4 @@ def generate_air_quality_plan(city: str, aqi: int, routine: str, home_setup: str
         except Exception:
             pass
 
-    # 3. Guaranteed Offline-Safe Fallback
     return _smart_aqi_plan(city, aqi, routine, home_setup)

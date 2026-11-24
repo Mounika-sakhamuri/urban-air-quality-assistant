@@ -1,28 +1,34 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 from app.main import app
 
 client = TestClient(app)
 
 
-def test_health_check():
-    res = client.get("/health")
+def test_health_endpoint():
+    res = client.get("/api/health")
     assert res.status_code == 200
-    assert res.json() == {"status": "healthy"}
+    assert res.json()["status"] == "ok"
 
 
-@patch("app.main.generate_air_quality_plan")
-def test_recommend_endpoint(mock_plan):
-    mock_plan.return_value = {
-        "risk_summary": "Moderate to poor air quality.",
-        "low_emission_routines": [{"title": "Metro Shift", "action": "Take metro", "impact": "-2.1 kg CO2"}],
-        "indoor_air_hacks": [{"title": "Cross Ventilation", "action": "Open windows at 2 PM", "benefit": "Reduces PM2.5"}]
-    }
-    res = client.post("/api/recommend", json={
-        "city": "Hyderabad",
-        "aqi": 140,
-        "routine": "10km car commute",
-        "home_setup": "1BHK apartment"
-    })
+def test_generate_plan_validation():
+    res = client.post("/api/generate-plan", json={"city": "", "aqi": -5, "routine": "", "home_setup": ""})
+    assert res.status_code == 422
+
+
+def test_generate_plan_success(monkeypatch):
+    def mock_plan(city: str, aqi: int, routine: str, home_setup: str) -> dict:
+        return {
+            "risk_summary": f"Moderate air quality in {city} (AQI {aqi}).",
+            "low_emission_routines": [{"title": "Eco Transit", "action": "Take bus", "impact": "-2 kg CO2"}],
+            "indoor_air_hacks": [{"title": "Ventilation", "action": "Open windows midday", "benefit": "-30% PM2.5"}],
+        }
+
+    monkeypatch.setattr("app.main.generate_air_quality_plan", mock_plan)
+    res = client.post(
+        "/api/generate-plan",
+        json={"city": "Guntur", "aqi": 120, "routine": "Bike commute", "home_setup": "2BHK flat"},
+    )
     assert res.status_code == 200
-    assert "low_emission_routines" in res.json()
+    data = res.json()
+    assert data["status"] == "success"
+    assert len(data["plan"]["low_emission_routines"]) == 1
